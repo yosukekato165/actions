@@ -2,27 +2,46 @@ name: s3-deploy-sample
 on:
   pull_request:
     branches:
+      - dev
       - master
+      - release
+    types: [opened, synchronize, closed]
 
 jobs:
   UploadStaticFiles:
     name: Upload static files
-    if: github.event.pull_request.merged == true #マージされたときのみこのjobを実行する
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-
     steps:
       - name: Checkout
         uses: actions/checkout@v2
 
-      - name: "Configure AWS credentials"
+      - name: "[DEV] Configure AWS credentials"
+        if: github.base_ref == 'dev'
         uses: aws-actions/configure-aws-credentials@v1
-        env:
+        with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-northeast-1
 
+      - name: "[STG] Configure AWS credentials"
+        if: github.base_ref == 'master'
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_STG_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_STG_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-1
+
+      - name: "[PRD] Configure AWS credentials"
+        if: github.base_ref == 'release'
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_PRD_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_PRD_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-1
+
       - name: S3 sync
-          working-directory: src
-          run: |
-            aws s3 sync s3://$S3_UPLOAD_BUCKET/ --quiet
+        working-directory: static-files
+        run: |
+          export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          aws s3 sync . s3://tomoupload --delete --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers --exclude "README.md"
